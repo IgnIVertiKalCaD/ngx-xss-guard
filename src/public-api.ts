@@ -1,11 +1,6 @@
-/*
- * Public API Surface of ngx-xss-guard
- */
-
-export * from "./lib/xss-guard.module";
-export * from "./lib/xss-sanitizer.service";
-export * from "./lib/safe-html.directive";
-export * from "./lib/safe-url.directive";
-export * from "./lib/csp.service";
-export * from "./lib/trusted-types.service";
-export * from "./lib/xss-sanitizer.config";
+export * from './lib/models/xss-policy.model';
+export * from './lib/services/xss-sanitizer.service';
+export * from './lib/directives/xss-sanitize.directive';
+export * from './lib/pipes/xss-sanitize.pipe';
+export * from './lib/components/xss-alert/xss-alert.component';
+export * from './lib/ngx-xss-guard.module';
