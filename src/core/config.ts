@@ -43,9 +43,21 @@ export interface SanitizationConfig {
  * Default sanitization configuration.
  */
 export const DEFAULT_SANITIZATION_CONFIG: Readonly<SanitizationConfig> = {
-  allowedTags: ["p", "br", "b", "i", "ul", "ol", "li", "span", "div", "a"],
-  allowedAttributes: ["id", "class", "style", "href", "target"],
-  stripIgnoreTag: true,
+  allowedTags: [
+    "p",
+    "br",
+    "b",
+    "i",
+    "ul",
+    "ol",
+    "li",
+    "span",
+    "div",
+    "a",
+    "img",
+  ],
+  allowedAttributes: ["id", "class", "style", "href", "target", "src"],
+  stripIgnoreTag: false,
   enableLogging: false,
   logFormat: "simple",
 };

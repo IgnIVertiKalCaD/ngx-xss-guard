@@ -4,7 +4,7 @@ const path = require("path");
 module.exports = {
   mode: "development", // Or 'production'
   // Entry point for your tests. Webpack will start here and include all imports.
-  entry: "./tests/xss-defender.spec.ts",
+  entry: "./spec/core/xss-defender.spec.ts",
   output: {
     // Output path for the bundled test file.
     path: path.resolve(__dirname, "dist"),
@@ -37,9 +37,3 @@ module.exports = {
   // Devtool for better debugging in the browser console
   devtool: "inline-source-map", // Or 'source-map'
 };
-
-it("should remove <script> tags by default", () => {
-  const maliciousString = 'Hello <script>alert("XSS")</script> world!';
-  const expectedString = "Hello  world!";
-  expect(defender.sanitizeString(maliciousString)).toBe(expectedString);
-});

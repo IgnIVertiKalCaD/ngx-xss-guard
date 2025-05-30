@@ -1,5 +1,5 @@
 {
-  "name": "ngx-xss-defender",
+  "name": "xss-defender",
   "version": "1.0.0",
   "description": "A standalone library for XSS sanitization and detection.",
   "main": "dist/index.js",

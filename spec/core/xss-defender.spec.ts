@@ -99,8 +99,140 @@ describe("XssDefender", () => {
     });
   });
 
-  // Можно добавить тесты для sanitizeHtmlForElement, sanitizeObject, checkUrlParams
-  // Для sanitizeHtmlForElement потребуются DOM-элементы (можно мокать или использовать jsdom в среде Node)
-  // Для sanitizeObject - тесты с различными объектами и массивами
-  // Для checkUrlParams - тесты с разными параметрами URL
+  describe("Llama 3.2 tests XssDefender", () => {
+    it("удаляет классический скрипт", () => {
+      const payload = "<script>alert(1)</script>";
+      expect(defender.hasXssRisks(payload)).toBeTrue();
+    });
+
+    it("обфусцированный регистром JS", () => {
+      const payload = "<JaVaScRiPt>alert(2)</JAvAsCrIpT>";
+      expect(defender.hasXssRisks(payload)).toBeTrue();
+    });
+
+    it("скрытая вставка с комментариями", () => {
+      const payload = "<scr<!-- -->ipt>alert(3)</scr" + "ipt>";
+      expect(defender.hasXssRisks(payload)).toBeTrue();
+    });
+
+    it("использует Unicode-экранирование", () => {
+      const payload = "<\u0073\u0063\u0072\u0069\u0070\u0074>alert(4)</script>";
+      expect(defender.hasXssRisks(payload)).toBeTrue();
+    });
+
+    it("HTML-комментарий внутри тега", () => {
+      const payload = "<scr<!-- -->ipt>alert(5)</script>";
+      expect(defender.hasXssRisks(payload)).toBeTrue();
+    });
+
+    it("hasXssRisks: простой <script> тег", () => {
+      const payload = '<script>alert("XSS")</script>';
+      expect(defender.hasXssRisks(payload)).toBeTrue();
+    });
+
+    it("hasXssRisks: <ScRiPt> смешанный регистр", () => {
+      const payload = "текст <ScRiPt>alert(1)</ScRiPt> еще текст";
+      expect(defender.hasXssRisks(payload)).toBeTrue();
+    });
+
+    it("hasXssRisks: javascript: URL, комментарий, регистр", () => {
+      const payload = '<a hReF="jAvAsCrIpT:alert(1)">link</a>';
+      expect(defender.hasXssRisks(payload)).toBeTrue();
+    });
+
+    it("hasXssRisks: style expression() с табуляцией", () => {
+      const payload = '<div style="width: exPreSsIoN(\talert(1))"></div>';
+      expect(defender.hasXssRisks(payload)).toBeTrue();
+    });
+
+    it("hasXssRisks: svg onload с hex и Unicode", () => {
+      const payload = "<s\u0076g/onload=&#" + "x61;lert(1)>"; // 'alert'
+      expect(defender.hasXssRisks(payload)).toBeTrue();
+    });
+
+    it("hasXssRisks: iframe srcdoc с внутренним скриптом", () => {
+      const payload = '<IFRAME SRCdoc="<img src=1 oNErRoR=alert(1)>"></IFRAME>';
+      expect(defender.hasXssRisks(payload)).toBeTrue();
+    });
+
+    it("hasXssRisks: data: URL с HTML+JS, регистр", () => {
+      const payload =
+        'Href="daTa:text/html;base64,PHNjcmlwdD5hbGVydCgiSGVsbG8iKTwvc2NyaXB0Pg=="';
+      expect(defender.hasXssRisks(payload)).toBeTrue();
+    });
+
+    it("hasXssRisks: onerror с неразрывным пробелом", () => {
+      const payload = '<img src="x" onerror\u00A0="alert(1)">'; // \u00A0 is NBSP
+      expect(defender.hasXssRisks(payload)).toBeTrue();
+    });
+
+    it("sanitizeString: удаляет <script> смешанный регистр", () => {
+      const payload = "Начало <ScR\u0049pT>alert(1)</ScR\u0049pT> Конец";
+      // <script> удаляется DANGEROUS_PATTERNS
+      expect(defender.sanitizeString(payload)).toBe("Начало  Конец");
+    });
+
+    it("sanitizeString: img onerror, Unicode в событии", () => {
+      const payload = '<img src="x" o\u006Eerror="alert(1)">';
+      // onerror атрибут удаляется DANGEROUS_PATTERNS или фильтром атрибутов
+      // 'img' и 'src' разрешены по умолчанию.
+      expect(defender.sanitizeString(payload)).toBe('<img src="x">');
+    });
+
+    it("sanitizeString: a href javascript: URL, комментарий", () => {
+      const payload = '<a hrEf="jaVaScRiPt:alert(1)">Test</a>';
+      // javascript: удаляется из href DANGEROUS_PATTERNS
+      // 'a' и 'href' разрешены.
+      expect(defender.sanitizeString(payload)).toBe('<a href="">Test</a>');
+    });
+
+    it("sanitizeString: style expression() с %20 и регистром", () => {
+      const payload = '<div style="color:%20ExpReSsIoN(alert(1))">Text</div>';
+      expect(defender.sanitizeString(payload)).toBe(
+        '<div style="color:">Text</div>',
+      );
+    });
+
+    it("sanitizeString: svg onload, hex в теге", () => {
+      const payload = '<s&#x76;g onload="alert(1)"></s&#x76;g>';
+      // onload удаляется DANGEROUS_PATTERNS.
+      // <svg> не разрешен -> кодируется.
+      expect(defender.sanitizeString(payload)).toBe("&lt;svg &gt;&lt;/svg&gt;");
+    });
+
+    it("sanitizeString: iframe src с TAB и JS URL", () => {
+      const payload = '<IFRAME\tsrc="javascript:alert(1)"></IFRAME>';
+      // javascript: удаляется DANGEROUS_PATTERNS.
+      // <iframe> не разрешен -> кодируется.
+      expect(defender.sanitizeString(payload)).toBe(
+        '&lt;IFRAME\tsrc=""&gt;&lt;/IFRAME&gt;',
+      );
+    });
+
+    it("sanitizeString: data: URL в href, Unicode в протоколе", () => {
+      const payload =
+        '<a hRef="d\u0061Ta:text/html,<script>alert(1)</script>">X</a>';
+      // data:text/html со <script> удаляется из href DANGEROUS_PATTERNS
+      expect(defender.sanitizeString(payload)).toBe('<a href="">X</a>');
+    });
+
+    it("sanitizeString: текст и <ScRiPt> %20 кодирование", () => {
+      const payload = "SafeText <ScRiPt%20sRc='x.js'></ScRiPt%20> End";
+      // <script> удаляется DANGEROUS_PATTERNS
+      expect(defender.sanitizeString(payload)).toBe("SafeText  End");
+    });
+
+    it("sanitizeString: img OnMousEOVER с HTML-комментарием", () => {
+      const payload = '<img src="ok.png" OnMousEOVER="alert(1)">';
+      // OnMousEOVER удаляется DANGEROUS_PATTERNS или фильтром атрибутов.
+      expect(defender.sanitizeString(payload)).toBe('<img src="ok.png">');
+    });
+
+    it("sanitizeString: ссылка с URL Unicode обфускацией JS", () => {
+      const payload =
+        '<a hRef="\u006a\u0061\u0076\u0061script:alert(1)">Link</a>';
+      // javascript: удаляется DANGEROUS_PATTERNS
+      expect(defender.sanitizeString(payload)).toBe('<a href="">Link</a>');
+    });
+  });
 });

@@ -52,7 +52,12 @@ export class XssDefender {
     value: string,
     config: SanitizationConfig,
   ): string {
-    let sanitized = value;
+    let sanitized = this.decodeNumericEntities(value);
+
+    sanitized = sanitized.replace(
+      /(\s|\u00A0)+on\w+(?:\/\*[\s\S]*?\*\/)?[\s\u00A0]*=\s*(?:(["']).*?\2|[^\s>]+)/gi,
+      "$1", // оставляем первый блок пробелов/NBSP
+    );
 
     // 1. Remove known dangerous patterns
     DANGEROUS_PATTERNS.forEach((pattern) => {
@@ -62,16 +67,15 @@ export class XssDefender {
     // 2. Handle HTML tags
     if (config.allowedTags && config.allowedTags.length > 0) {
       // Pattern to find tags that are NOT in the allowed list
-      // This matches opening tags, closing tags, and self-closing tags.
       const tagsToRemovePattern = new RegExp(
-        `</?(?!${config.allowedTags.join("|")})[a-zA-Z0-9]+[^>]*>`,
+        `</?(?!(?:${config.allowedTags.join("|")})(?:\\s|>|/))[a-zA-Z0-9]+[^>]*>`,
         "gi",
       );
       sanitized = sanitized.replace(tagsToRemovePattern, (match) => {
         if (config.stripIgnoreTag) {
           return ""; // Remove the disallowed tag
         }
-        // Encode the disallowed tag (e.g., <badtag> becomes &lt;badtag&gt;)
+        // Encode the disallowed tag
         return match.replace(/</g, "&lt;").replace(/>/g, "&gt;");
       });
     } else {
@@ -80,7 +84,7 @@ export class XssDefender {
         // Remove all tags
         sanitized = sanitized.replace(/<[^>]+>/gi, "");
       } else {
-        // Encode all tags (e.g., <tag> becomes &lt;tag&gt;)
+        // Encode all tags
         sanitized = sanitized.replace(
           /<(\/?[\w\d\s="/.'-]+?)>/gi,
           (m, tagContent) => `&lt;${tagContent}&gt;`,
@@ -90,43 +94,39 @@ export class XssDefender {
 
     // 3. Handle HTML attributes (only for tags that are allowed or were not stripped)
     if (config.allowedAttributes && config.allowedAttributes.length > 0) {
-      const universalTagPattern = /<([a-zA-Z0-9]+)((?:\s+[^>]*)?)>/g; // Matches any tag and its attributes string
+      const universalTagPattern = /<([a-zA-Z0-9]+)((?:\s+[^>]*)?)>/g;
       sanitized = sanitized.replace(
         universalTagPattern,
         (match, tagName, attributesString) => {
           const lowerTagName = tagName.toLowerCase();
-          // Skip if the tag itself is not allowed (it might have been encoded, so check original allowedTags)
+
+          // Skip if the tag itself is not allowed
           if (
             config.allowedTags &&
-            !config.allowedTags.includes(lowerTagName) &&
-            !config.stripIgnoreTag
+            !config.allowedTags.includes(lowerTagName)
           ) {
-            // If tags are encoded, this attribute stripping logic might not apply as expected
-            // This part primarily works if disallowed tags were stripped or if the tag is allowed.
             return match;
-          }
-          if (
-            config.allowedTags &&
-            !config.allowedTags.includes(lowerTagName) &&
-            config.stripIgnoreTag
-          ) {
-            // If tag was supposed to be stripped but wasn't caught by previous step (e.g. complex/malformed)
-            // this check might be redundant if previous step was perfect.
-            return match; // Or consider stripping the match if tag is definitively disallowed
           }
 
           const attributePattern =
             /\s*([a-zA-Z0-9\-_]+)\s*=\s*(?:(["'])(.*?)\2|([^>\s]+))/g;
           let newAttributesString = "";
           let attrMatch;
+
           while (
             (attrMatch = attributePattern.exec(attributesString)) !== null
           ) {
             const attributeName = attrMatch[1].toLowerCase();
             if (config.allowedAttributes?.includes(attributeName)) {
-              // Reconstruct the attribute, ensuring its value is not re-processed by dangerous patterns here
-              // as those were globally applied. Value itself is not deeply sanitized here beyond initial pass.
-              newAttributesString += ` ${attrMatch[0]}`;
+              let attributeValue =
+                attrMatch[3] !== undefined ? attrMatch[3] : attrMatch[4];
+
+              const escapedAttributeValue = attributeValue.replace(
+                /"/g,
+                "&quot;",
+              );
+
+              newAttributesString += ` ${attributeName}="${escapedAttributeValue}"`;
             }
           }
           return `<${tagName}${newAttributesString}>`;
@@ -301,9 +301,25 @@ export class XssDefender {
    */
   public hasXssRisks(value: string | null | undefined): boolean {
     if (!value) return false;
-    return DANGEROUS_PATTERNS.some((pattern) => pattern.test(String(value)));
+    const str = String(value);
+    return DANGEROUS_PATTERNS.some((p) =>
+      new RegExp(p.source, p.flags).test(str),
+    );
   }
 
+  private decodeNumericEntities(str: string): string {
+    return (
+      str
+        // &#xNNNN;
+        .replace(/&#x([0-9a-f]+);?/gi, (_, hex) =>
+          String.fromCharCode(parseInt(hex, 16)),
+        )
+        // &#NNNN;
+        .replace(/&#(\d+);?/g, (_, dec) =>
+          String.fromCharCode(parseInt(dec, 10)),
+        )
+    );
+  }
   /**
    * Logs a detection event when sanitization modifies the input string.
    * @param originalValue The original, unsafe string.
